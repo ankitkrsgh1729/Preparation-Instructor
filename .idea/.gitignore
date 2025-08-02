@@ -1,0 +1,17 @@
+# Default ignored files
+/shelf/
+/workspace.xml
+/compiler.xml
+/encodings.xml
+/jarRepositories.xml
+/misc.xml
+/modules.xml
+/vcs.xml
+/settings.json
+/logs
+*.lst
+*pom.properties
+quiz-system.log
+pom.properties
+createdFiles.lst
+inputFiles.lst

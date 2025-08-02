@@ -1,0 +1,24 @@
+# Server Configuration
+server.port=8080
+
+# GitHub Configuration
+github.repository.url=https://github.com/yourusername/interview-notes.git
+github.repository.branch=main
+github.repository.local-path=./data/repo
+
+# OpenAI Configuration
+openai.api.key=your-api-key-here
+openai.model=gpt-3.5-turbo
+openai.temperature=0.7
+openai.max-tokens=500
+
+# Quiz System Configuration
+quiz.session.questions-per-session=5
+quiz.session.default-difficulty=MEDIUM
+
+# Progress Tracking
+progress.storage.path=./data/progress.json
+
+# Logging Configuration
+logging.level.com.interview.quizsystem=INFO
+logging.file.name=./logs/quiz-system.log 
