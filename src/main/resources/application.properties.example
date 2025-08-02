@@ -2,15 +2,14 @@
 server.port=8080
 
 # GitHub Configuration
-github.repository.url=https://github.com/yourusername/interview-notes.git
+github.repository.url=https://github.com/ankitkrsgh1729/documented-notes
 github.repository.branch=main
 github.repository.local-path=./data/repo
+github.repository.file-patterns=**/*.md,**/docs/*.md,**/notes/*.md
+github.repository.exclude-patterns=**/node_modules/**,**/target/**
 
 # OpenAI Configuration
 openai.api.key=your-api-key-here
-openai.model=gpt-3.5-turbo
-openai.temperature=0.7
-openai.max-tokens=500
 
 # Quiz System Configuration
 quiz.session.questions-per-session=5
