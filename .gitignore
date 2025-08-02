@@ -1,0 +1,21 @@
+# IDE files
+.idea/
+.vscode/
+*.iml
+
+# Build output
+target/
+build/
+out/
+
+# Logs
+logs/
+*.log
+
+# Application properties with secrets
+src/main/resources/application.properties
+**/application-*.properties
+!src/main/resources/application.properties.example
+
+# Local data
+data/ 
