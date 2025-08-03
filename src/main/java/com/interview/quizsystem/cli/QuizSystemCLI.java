@@ -10,13 +10,13 @@ import com.interview.quizsystem.service.ProgressTrackingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
-import org.springframework.stereotype.Component;
+// import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Scanner;
 
 @Slf4j
-@Component
+// @Component - Disabled for REST API usage
 @RequiredArgsConstructor
 public class QuizSystemCLI implements CommandLineRunner {
 

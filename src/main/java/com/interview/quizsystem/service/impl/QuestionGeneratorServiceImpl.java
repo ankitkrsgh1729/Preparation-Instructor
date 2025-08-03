@@ -41,19 +41,44 @@ public class QuestionGeneratorServiceImpl implements QuestionGeneratorService {
     @Override
     public List<Question> generateQuestions(String topic, int count, Difficulty difficulty) {
         Map<String, String> topicContent = gitHubParserService.getContentByTopic(topic);
-        List<Question> questions = new ArrayList<>();
+        if (topicContent.isEmpty()) {
+            log.warn("No content found for topic: {}", topic);
+            return Collections.emptyList();
+        }
 
-        for (Map.Entry<String, String> entry : topicContent.entrySet()) {
-            String content = entry.getValue();
+        List<Question> questions = new ArrayList<>();
+        List<Map.Entry<String, String>> contentEntries = new ArrayList<>(topicContent.entrySet());
+        int questionsPerContent = Math.max(2, (int) Math.ceil((double) count / contentEntries.size()));
+        int maxAttempts = count * 2; // Allow some extra attempts for error cases
+        int attempts = 0;
+
+        while (questions.size() < count && attempts < maxAttempts) {
+            // Cycle through content pieces
+            int contentIndex = (attempts / questionsPerContent) % contentEntries.size();
+            Map.Entry<String, String> entry = contentEntries.get(contentIndex);
+            
             try {
-                Question question = generateQuestion(content, topic, difficulty);
-                questions.add(question);
-                if (questions.size() >= count) {
-                    break;
+                // Try to generate a question from this content piece
+                Question question = generateQuestion(entry.getValue(), topic, difficulty);
+                
+                // Check for duplicate questions
+                if (isDifferentFromExisting(question, questions)) {
+                    questions.add(question);
+                    log.debug("Generated question {} of {} for topic: {}", questions.size(), count, topic);
                 }
             } catch (Exception e) {
-                log.error("Error generating question for content from file: {}", entry.getKey(), e);
+                log.warn("Failed to generate question from content piece {}, attempt {}: {}", 
+                    entry.getKey(), attempts, e.getMessage());
             }
+            
+            attempts++;
+        }
+
+        if (questions.isEmpty()) {
+            log.error("Failed to generate any questions for topic: {} after {} attempts", topic, attempts);
+        } else if (questions.size() < count) {
+            log.warn("Only generated {} of {} requested questions for topic: {}", 
+                questions.size(), count, topic);
         }
 
         return questions;
@@ -114,14 +139,29 @@ public class QuestionGeneratorServiceImpl implements QuestionGeneratorService {
         return response;
     }
 
+    private boolean isDifferentFromExisting(Question newQuestion, List<Question> existingQuestions) {
+        return existingQuestions.stream()
+            .noneMatch(existing -> 
+                existing.getContent().equals(newQuestion.getContent()) ||
+                (existing.getCorrectAnswer() != null && 
+                 existing.getCorrectAnswer().equals(newQuestion.getCorrectAnswer())));
+    }
+
     private String buildPrompt(String content, Difficulty difficulty) {
         return String.format("""
-                Create a technical interview question based on the following content:
+                Create a unique technical interview question based on the following content.
+                Make sure the question tests understanding, not just memorization.
                 
+                Content:
                 %s
                 
                 Requirements:
                 - Difficulty level: %s
+                - Question should be challenging but answerable
+                - Focus on practical understanding
+                - For EASY difficulty: test basic concepts
+                - For MEDIUM difficulty: test application of concepts
+                - For HARD difficulty: test deep understanding and edge cases
                 - Include a clear question
                 - Provide multiple choice options (if applicable)
                 - Include the correct answer

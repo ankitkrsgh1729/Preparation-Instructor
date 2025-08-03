@@ -1,5 +1,6 @@
 package com.interview.quizsystem.model;
 
+import com.interview.quizsystem.dto.AnswerFeedback;
 import lombok.Data;
 import lombok.Builder;
 import lombok.NoArgsConstructor;
@@ -22,4 +23,5 @@ public class Question {
     private Difficulty difficulty;
     private String sourceFile;
     private String sourceContent;
+    private AnswerFeedback answerFeedback;
 } 

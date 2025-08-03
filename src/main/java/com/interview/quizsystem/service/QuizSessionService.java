@@ -7,5 +7,5 @@ public interface QuizSessionService {
     QuizSession startSession(String topic, Difficulty difficulty, int questionCount);
     QuizSession submitAnswer(String sessionId, String questionId, String answer);
     QuizSession getSession(String sessionId);
-    void endSession(String sessionId);
+    QuizSession endSession(String sessionId);
 } 
