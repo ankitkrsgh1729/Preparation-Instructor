@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.interview.quizsystem.model.Question;
+import com.interview.quizsystem.model.QuestionDTO;
 import com.interview.quizsystem.model.Difficulty;
 import com.interview.quizsystem.model.QuestionType;
 import com.interview.quizsystem.service.QuestionGeneratorService;
@@ -39,14 +39,14 @@ public class QuestionGeneratorServiceImpl implements QuestionGeneratorService {
     private static final String OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
     @Override
-    public List<Question> generateQuestions(String topic, int count, Difficulty difficulty) {
+    public List<QuestionDTO> generateQuestions(String topic, int count, Difficulty difficulty) {
         Map<String, String> topicContent = gitHubParserService.getContentByTopic(topic);
         if (topicContent.isEmpty()) {
             log.warn("No content found for topic: {}", topic);
             return Collections.emptyList();
         }
 
-        List<Question> questions = new ArrayList<>();
+        List<QuestionDTO> questions = new ArrayList<>();
         List<Map.Entry<String, String>> contentEntries = new ArrayList<>(topicContent.entrySet());
         int questionsPerContent = Math.max(2, (int) Math.ceil((double) count / contentEntries.size()));
         int maxAttempts = count * 2; // Allow some extra attempts for error cases
@@ -59,7 +59,7 @@ public class QuestionGeneratorServiceImpl implements QuestionGeneratorService {
             
             try {
                 // Try to generate a question from this content piece
-                Question question = generateQuestion(entry.getValue(), topic, difficulty);
+                QuestionDTO question = generateQuestion(entry.getValue(), topic, difficulty);
                 
                 // Check for duplicate questions
                 if (isDifferentFromExisting(question, questions)) {
@@ -85,7 +85,7 @@ public class QuestionGeneratorServiceImpl implements QuestionGeneratorService {
     }
 
     @Override
-    public Question generateQuestion(String content, String topic, Difficulty difficulty) {
+    public QuestionDTO generateQuestion(String content, String topic, Difficulty difficulty) {
         try {
             String prompt = buildPrompt(content, difficulty);
             
@@ -139,7 +139,7 @@ public class QuestionGeneratorServiceImpl implements QuestionGeneratorService {
         return response;
     }
 
-    private boolean isDifferentFromExisting(Question newQuestion, List<Question> existingQuestions) {
+    private boolean isDifferentFromExisting(QuestionDTO newQuestion, List<QuestionDTO> existingQuestions) {
         return existingQuestions.stream()
             .noneMatch(existing -> 
                 existing.getContent().equals(newQuestion.getContent()) ||
@@ -178,10 +178,10 @@ public class QuestionGeneratorServiceImpl implements QuestionGeneratorService {
                 """, content, difficulty);
     }
 
-    private Question parseQuestionFromResponse(String response, String topic, Difficulty difficulty, String sourceContent) {
+    private QuestionDTO parseQuestionFromResponse(String response, String topic, Difficulty difficulty, String sourceContent) {
         try {
             JsonNode jsonNode = objectMapper.readTree(response);
-            return Question.builder()
+            return QuestionDTO.builder()
                     .id(UUID.randomUUID().toString())
                     .content(jsonNode.get("question").asText())
                     .type(QuestionType.valueOf(jsonNode.get("type").asText()))

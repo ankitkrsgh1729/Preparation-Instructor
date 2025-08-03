@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.interview.quizsystem.dto.AnswerFeedback;
-import com.interview.quizsystem.model.Question;
+import com.interview.quizsystem.model.QuestionDTO;
 import com.interview.quizsystem.service.AnswerEvaluationService;
 import kong.unirest.HttpResponse;
 import kong.unirest.Unirest;
@@ -32,7 +32,7 @@ public class OpenAIAnswerEvaluationService implements AnswerEvaluationService {
     private static final String OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
     @Override
-    public AnswerFeedback evaluateAnswer(Question question, String userAnswer) {
+    public AnswerFeedback evaluateAnswer(QuestionDTO question, String userAnswer) {
         try {
             String prompt = buildPrompt(question, userAnswer);
             String response = callOpenAI(prompt);
@@ -50,7 +50,7 @@ public class OpenAIAnswerEvaluationService implements AnswerEvaluationService {
         }
     }
 
-    private String buildPrompt(Question question, String userAnswer) {
+    private String buildPrompt(QuestionDTO question, String userAnswer) {
         return String.format("""
             You are an expert evaluator for technical interview questions.
             Your goal is to provide detailed, educational feedback that helps the user learn and improve.

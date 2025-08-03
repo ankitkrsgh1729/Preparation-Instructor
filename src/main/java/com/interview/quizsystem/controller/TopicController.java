@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
-@RequestMapping("/api")
+@RequestMapping("/api/topics")
 @RequiredArgsConstructor
 public class TopicController {
 
@@ -33,7 +33,7 @@ public class TopicController {
         "design patterns"
     );
 
-    @GetMapping("/topics")
+    @GetMapping
     @Cacheable(value = "topics", unless = "#result.statusCode != T(org.springframework.http.HttpStatus).OK")
     public ResponseEntity<?> getTopics() {
         try {
@@ -49,7 +49,7 @@ public class TopicController {
         }
     }
 
-    @GetMapping("/topics/{topic}/availability")
+    @GetMapping("/{topic}/availability")
     @Cacheable(value = "topic-availability", key = "#topic", 
                unless = "#result.statusCode != T(org.springframework.http.HttpStatus).OK")
     public ResponseEntity<?> getTopicAvailability(@PathVariable String topic) {

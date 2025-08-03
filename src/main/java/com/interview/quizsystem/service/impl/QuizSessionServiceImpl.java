@@ -1,17 +1,20 @@
 package com.interview.quizsystem.service.impl;
 
 import com.interview.quizsystem.model.*;
+import com.interview.quizsystem.model.entity.Question;
 import com.interview.quizsystem.service.QuizSessionService;
 import com.interview.quizsystem.service.QuestionGeneratorService;
 import com.interview.quizsystem.service.AnswerEvaluationService;
 import com.interview.quizsystem.dto.AnswerFeedback;
+import com.interview.quizsystem.repository.QuizSessionRepository;
+import com.interview.quizsystem.repository.UserAnswerRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -21,12 +24,43 @@ public class QuizSessionServiceImpl implements QuizSessionService {
 
     private final QuestionGeneratorService questionGeneratorService;
     private final AnswerEvaluationService answerEvaluationService;
-    private final Map<String, QuizSession> activeSessions = new ConcurrentHashMap<>();
+    private final QuizSessionRepository quizSessionRepository;
+    private final UserAnswerRepository userAnswerRepository;
+
+    private Question convertToEntity(QuestionDTO dto) {
+        return Question.builder()
+                .id(dto.getId())
+                .questionText(dto.getContent())
+                .questionType(dto.getType())
+                .options(dto.getOptions())
+                .difficulty(dto.getDifficulty())
+                .expectedAnswer(dto.getCorrectAnswer())
+                .explanation(dto.getExplanation())
+                .sourceFile(dto.getSourceFile())
+                .sourceContent(dto.getSourceContent())
+                .build();
+    }
+
+    private QuestionDTO convertToDTO(Question entity) {
+        return QuestionDTO.builder()
+                .id(entity.getId())
+                .content(entity.getQuestionText())
+                .type(entity.getQuestionType())
+                .options(entity.getOptions())
+                .correctAnswer(entity.getExpectedAnswer())
+                .explanation(entity.getExplanation())
+                .topic(entity.getTopic() != null ? entity.getTopic().getName() : null)
+                .difficulty(entity.getDifficulty())
+                .sourceFile(entity.getSourceFile())
+                .sourceContent(entity.getSourceContent())
+                .build();
+    }
 
     @Override
+    @Transactional
     public QuizSession startSession(String topic, Difficulty difficulty, int questionCount) {
         log.debug("Generating {} questions for topic: {}, difficulty: {}", questionCount, topic, difficulty);
-        List<Question> questions = questionGeneratorService.generateQuestions(topic, questionCount, difficulty);
+        List<QuestionDTO> questions = questionGeneratorService.generateQuestions(topic, questionCount, difficulty);
         
         // Validate questions have correct answers
         questions.forEach(q -> {
@@ -39,35 +73,14 @@ public class QuizSessionServiceImpl implements QuizSessionService {
         });
 
         // Create a deep copy of questions for the response
-        List<Question> questionsCopy = questions.stream()
-            .map(q -> {
-                Question copy = Question.builder()
-                    .id(q.getId())
-                    .content(q.getContent())
-                    .type(q.getType())
-                    .options(q.getType() == QuestionType.MULTIPLE_CHOICE ? 
-                        new ArrayList<>(q.getOptions()) : q.getOptions())
-                    .correctAnswer(null) // Hide correct answer initially
-                    .explanation(q.getExplanation())
-                    .topic(q.getTopic())
-                    .difficulty(q.getDifficulty())
-                    .sourceFile(q.getSourceFile())
-                    .sourceContent(q.getSourceContent())
-                    .build();
-                log.debug("Created visible copy of question - ID: {}, Type: {}", copy.getId(), copy.getType());
-                return copy;
-            })
-            .collect(Collectors.toList());
-
-        // Store original questions with answers
-        List<Question> originalQuestions = questions.stream()
-            .map(q -> Question.builder()
+        List<QuestionDTO> questionsCopy = questions.stream()
+            .map(q -> QuestionDTO.builder()
                 .id(q.getId())
                 .content(q.getContent())
                 .type(q.getType())
                 .options(q.getType() == QuestionType.MULTIPLE_CHOICE ? 
                     new ArrayList<>(q.getOptions()) : q.getOptions())
-                .correctAnswer(q.getCorrectAnswer()) // Keep correct answer
+                .correctAnswer(null) // Hide correct answer initially
                 .explanation(q.getExplanation())
                 .topic(q.getTopic())
                 .difficulty(q.getDifficulty())
@@ -76,22 +89,19 @@ public class QuizSessionServiceImpl implements QuizSessionService {
                 .build())
             .collect(Collectors.toList());
 
-        // Randomize MCQ options in the copy
-        questionsCopy.forEach(q -> {
-            if (q.getType() == QuestionType.MULTIPLE_CHOICE && q.getOptions() != null) {
-                Collections.shuffle(q.getOptions());
-                log.debug("Shuffled options for MCQ - ID: {}", q.getId());
-            }
-        });
+        // Convert DTOs to entities for storage
+        List<Question> storedQuestions = questions.stream()
+            .map(this::convertToEntity)
+            .collect(Collectors.toList());
         
         String sessionId = UUID.randomUUID().toString();
         log.debug("Creating new session: {}", sessionId);
         
-        // Create session with both sets of questions
         QuizSession session = QuizSession.builder()
                 .id(sessionId)
-                .questions(originalQuestions) // Store original questions with answers
-                .visibleQuestions(questionsCopy) // Store questions for display
+                .questions(questions)
+                .visibleQuestions(questionsCopy)
+                .storedQuestions(storedQuestions)
                 .answers(new ArrayList<>())
                 .topic(topic)
                 .difficulty(difficulty)
@@ -100,35 +110,45 @@ public class QuizSessionServiceImpl implements QuizSessionService {
                 .score(0.0)
                 .build();
 
-        activeSessions.put(session.getId(), session);
+        session = quizSessionRepository.save(session);
         log.debug("Session created and stored: {}", session.getId());
         
         // Return session with visible questions only
-        QuizSession responseSession = session.toBuilder()
+        return session.toBuilder()
                 .questions(questionsCopy)
                 .build();
-        
-        return responseSession;
     }
 
     @Override
+    @Transactional
     public QuizSession submitAnswer(String sessionId, String questionId, String answer) {
-        QuizSession session = activeSessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Session not found: " + sessionId);
-        }
+        QuizSession session = quizSessionRepository.findById(sessionId)
+            .orElseThrow(() -> new IllegalArgumentException("Session not found: " + sessionId));
 
         if (session.getStatus() != SessionStatus.IN_PROGRESS) {
             throw new IllegalStateException("Session is not in progress");
         }
 
+        // Convert stored questions to DTOs
+        List<QuestionDTO> questions = session.getStoredQuestions().stream()
+            .map(this::convertToDTO)
+            .collect(Collectors.toList());
+        session.setQuestions(questions);
+
+        List<QuestionDTO> visibleQuestions = questions.stream()
+            .map(q -> q.toBuilder()
+                .correctAnswer(null) // Hide correct answer initially
+                .build())
+            .collect(Collectors.toList());
+        session.setVisibleQuestions(visibleQuestions);
+
         // Find the question in both questions and visibleQuestions lists
-        Question question = session.getQuestions().stream()
+        QuestionDTO question = session.getQuestions().stream()
                 .filter(q -> q.getId().equals(questionId))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Question not found: " + questionId));
 
-        Question visibleQuestion = session.getVisibleQuestions().stream()
+        QuestionDTO visibleQuestion = session.getVisibleQuestions().stream()
                 .filter(q -> q.getId().equals(questionId))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Question not found in visible questions: " + questionId));
@@ -146,19 +166,23 @@ public class QuizSessionServiceImpl implements QuizSessionService {
                 .answer(answer)
                 .correct(isCorrect)
                 .answeredAt(LocalDateTime.now())
+                .quizSession(session)
                 .build();
 
+        userAnswer = userAnswerRepository.save(userAnswer);
         session.getAnswers().add(userAnswer);
         
         // Update session score
         session.setScore(calculateScore(session));
+        session = quizSessionRepository.save(session);
 
         return session;
     }
 
     @Override
+    @Transactional(readOnly = true)
     public QuizSession getSession(String sessionId) {
-        QuizSession session = activeSessions.get(sessionId);
+        QuizSession session = quizSessionRepository.findById(sessionId).orElse(null);
         if (session != null) {
             // Return session with visible questions
             return session.toBuilder()
@@ -169,19 +193,24 @@ public class QuizSessionServiceImpl implements QuizSessionService {
     }
 
     @Override
+    @Transactional
     public QuizSession endSession(String sessionId) {
-        QuizSession session = activeSessions.get(sessionId);
-        if (session == null) {
-            throw new IllegalArgumentException("Session not found: " + sessionId);
-        }
+        QuizSession session = quizSessionRepository.findById(sessionId)
+            .orElseThrow(() -> new IllegalArgumentException("Session not found: " + sessionId));
 
         if (session.getStatus() == SessionStatus.COMPLETED) {
             throw new IllegalStateException("Session is already completed");
         }
 
+        // Convert stored questions to DTOs
+        List<QuestionDTO> questions = session.getStoredQuestions().stream()
+            .map(this::convertToDTO)
+            .collect(Collectors.toList());
+        session.setQuestions(questions);
+
         // Reveal all correct answers and restore original options
         session.getVisibleQuestions().forEach(visibleQuestion -> {
-            Question originalQuestion = session.getQuestions().stream()
+            QuestionDTO originalQuestion = questions.stream()
                 .filter(q -> q.getId().equals(visibleQuestion.getId()))
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("Question not found"));
@@ -196,20 +225,25 @@ public class QuizSessionServiceImpl implements QuizSessionService {
         session.setEndTime(LocalDateTime.now());
 
         // Add empty answers for unanswered questions
-        session.getQuestions().forEach(question -> {
-            if (session.getAnswers().stream()
+        final QuizSession finalSession = session; // Make effectively final
+        questions.forEach(question -> {
+            if (finalSession.getAnswers().stream()
                     .noneMatch(a -> a.getQuestionId().equals(question.getId()))) {
-                session.getAnswers().add(UserAnswer.builder()
+                UserAnswer emptyAnswer = UserAnswer.builder()
                     .questionId(question.getId())
                     .answer("")
                     .correct(false)
-                    .answeredAt(session.getEndTime())
-                    .build());
+                    .answeredAt(finalSession.getEndTime())
+                    .quizSession(finalSession)
+                    .build();
+                emptyAnswer = userAnswerRepository.save(emptyAnswer);
+                finalSession.getAnswers().add(emptyAnswer);
             }
         });
 
         // Calculate final score
         session.setScore(calculateScore(session));
+        session = quizSessionRepository.save(session);
         
         // Return session with visible questions
         return session.toBuilder()
@@ -217,7 +251,7 @@ public class QuizSessionServiceImpl implements QuizSessionService {
                 .build();
     }
 
-    private boolean validateAnswer(Question question, String answer) {
+    private boolean validateAnswer(QuestionDTO question, String answer) {
         if (question.getCorrectAnswer() == null) {
             log.error("Question {} has no correct answer defined", question.getId());
             throw new IllegalStateException("Question has no correct answer defined");
