@@ -35,8 +35,13 @@ public class ProgressController {
 
     @GetMapping
     public ResponseEntity<List<TopicProgressDTO>> getUserProgress() {
-        // TODO: Replace with actual user authentication
         User user = userService.getCurrentUser();
+        
+        // Get all topics and ensure progress exists for each
+        List<Topic> allTopics = topicService.getAllTopics();
+        allTopics.forEach(topic -> progressService.getOrCreateTopicProgress(user, topic));
+        
+        // Now get all progress
         List<TopicProgress> progress = progressService.getUserProgress(user);
         
         List<TopicProgressDTO> dtos = progress.stream()

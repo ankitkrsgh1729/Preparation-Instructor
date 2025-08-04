@@ -2,9 +2,9 @@ package com.interview.quizsystem.service.impl;
 
 import com.interview.quizsystem.model.*;
 import com.interview.quizsystem.model.entity.Question;
-import com.interview.quizsystem.service.QuizSessionService;
-import com.interview.quizsystem.service.QuestionGeneratorService;
-import com.interview.quizsystem.service.AnswerEvaluationService;
+import com.interview.quizsystem.model.entity.Topic;
+import com.interview.quizsystem.model.entity.User;
+import com.interview.quizsystem.service.*;
 import com.interview.quizsystem.dto.AnswerFeedback;
 import com.interview.quizsystem.repository.QuizSessionRepository;
 import com.interview.quizsystem.repository.UserAnswerRepository;
@@ -26,6 +26,9 @@ public class QuizSessionServiceImpl implements QuizSessionService {
     private final AnswerEvaluationService answerEvaluationService;
     private final QuizSessionRepository quizSessionRepository;
     private final UserAnswerRepository userAnswerRepository;
+    private final ProgressService progressService;
+    private final TopicService topicService;
+    private final UserService userService;
 
     private Question convertToEntity(QuestionDTO dto) {
         return Question.builder()
@@ -176,6 +179,11 @@ public class QuizSessionServiceImpl implements QuizSessionService {
         session.setScore(calculateScore(session));
         session = quizSessionRepository.save(session);
 
+        // Update topic progress
+        User user = userService.getCurrentUser();
+        Topic topic = topicService.getTopicByName(session.getTopic());
+        progressService.updateProgress(user, topic, session.getDifficulty(), isCorrect);
+
         return session;
     }
 
@@ -195,7 +203,7 @@ public class QuizSessionServiceImpl implements QuizSessionService {
     @Override
     @Transactional
     public QuizSession endSession(String sessionId) {
-        QuizSession session = quizSessionRepository.findById(sessionId)
+        final QuizSession session = quizSessionRepository.findById(sessionId)
             .orElseThrow(() -> new IllegalArgumentException("Session not found: " + sessionId));
 
         if (session.getStatus() == SessionStatus.COMPLETED) {
@@ -225,33 +233,39 @@ public class QuizSessionServiceImpl implements QuizSessionService {
         session.setEndTime(LocalDateTime.now());
 
         // Add empty answers for unanswered questions
-        final QuizSession finalSession = session; // Make effectively final
         questions.forEach(question -> {
-            if (finalSession.getAnswers().stream()
+            if (session.getAnswers().stream()
                     .noneMatch(a -> a.getQuestionId().equals(question.getId()))) {
                 UserAnswer emptyAnswer = UserAnswer.builder()
                     .questionId(question.getId())
                     .answer("")
                     .correct(false)
-                    .answeredAt(finalSession.getEndTime())
-                    .quizSession(finalSession)
+                    .answeredAt(session.getEndTime())
+                    .quizSession(session)
                     .build();
                 emptyAnswer = userAnswerRepository.save(emptyAnswer);
-                finalSession.getAnswers().add(emptyAnswer);
+                session.getAnswers().add(emptyAnswer);
+
+                // Update topic progress for unanswered questions
+                User user = userService.getCurrentUser();
+                Topic topic = topicService.getTopicByName(session.getTopic());
+                progressService.updateProgress(user, topic, session.getDifficulty(), false);
             }
         });
 
         // Calculate final score
         session.setScore(calculateScore(session));
-        session = quizSessionRepository.save(session);
+        QuizSession savedSession = quizSessionRepository.save(session);
         
         // Return session with visible questions
-        return session.toBuilder()
+        return savedSession.toBuilder()
                 .questions(session.getVisibleQuestions())
                 .build();
     }
 
     private boolean validateAnswer(QuestionDTO question, String answer) {
+        log.info("Validating answer for question type: {}", question.getType());
+        
         if (question.getCorrectAnswer() == null) {
             log.error("Question {} has no correct answer defined", question.getId());
             throw new IllegalStateException("Question has no correct answer defined");
@@ -265,6 +279,7 @@ public class QuizSessionServiceImpl implements QuizSessionService {
 
         switch (question.getType()) {
             case MULTIPLE_CHOICE:
+                log.debug("Validating multiple choice answer");
                 // For MCQ, answer must match exactly one of the options
                 if (question.getOptions() == null || question.getOptions().isEmpty()) {
                     log.error("MCQ question {} has no options defined", question.getId());
@@ -276,6 +291,7 @@ public class QuizSessionServiceImpl implements QuizSessionService {
                 return userAnswer.equals(question.getCorrectAnswer().trim());
 
             case TRUE_FALSE:
+                log.debug("Validating true/false answer");
                 // Case-insensitive comparison for true/false
                 String normalizedAnswer = userAnswer.toLowerCase();
                 String normalizedCorrect = question.getCorrectAnswer().trim().toLowerCase();
@@ -286,9 +302,11 @@ public class QuizSessionServiceImpl implements QuizSessionService {
 
             case SHORT_ANSWER:
             case SCENARIO_BASED:
+                log.info("Using AI evaluation for {} answer", question.getType());
                 // Use AI-based evaluation for text answers
                 try {
                     AnswerFeedback feedback = answerEvaluationService.evaluateAnswer(question, userAnswer);
+                    log.info("AI evaluation completed with similarity score: {}", feedback.getSimilarityScore());
                     
                     // Store the feedback in the question for frontend display
                     question.setAnswerFeedback(feedback);
