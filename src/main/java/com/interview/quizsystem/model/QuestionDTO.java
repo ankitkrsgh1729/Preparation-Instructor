@@ -1,20 +1,19 @@
 package com.interview.quizsystem.model;
 
 import com.interview.quizsystem.dto.AnswerFeedback;
-import lombok.Data;
-import lombok.Builder;
-import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
-
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 import java.util.List;
 
 @Data
-@Builder
+@Builder(toBuilder = true)
 @NoArgsConstructor
 @AllArgsConstructor
-public class Question {
+public class QuestionDTO {
     private String id;
-    private String content;
+    private String content;  // Used as questionText in the entity
     private QuestionType type;
     private List<String> options;
     private String correctAnswer;

@@ -1,10 +1,14 @@
 package com.interview.quizsystem.dto;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 public class AnswerFeedback {
     private boolean correct;
     private double similarityScore; // 0-100%
@@ -13,5 +17,4 @@ public class AnswerFeedback {
     private String incorrectParts;
     private String improvementSuggestions;
     private String correctAnswer;
-    private String conceptualUnderstanding;
 } 

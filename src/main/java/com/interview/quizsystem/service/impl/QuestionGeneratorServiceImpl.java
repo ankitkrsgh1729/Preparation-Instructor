@@ -4,11 +4,19 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.interview.quizsystem.model.Question;
+import com.interview.quizsystem.model.QuestionDTO;
 import com.interview.quizsystem.model.Difficulty;
 import com.interview.quizsystem.model.QuestionType;
+import com.interview.quizsystem.model.AIOperationType;
+import com.interview.quizsystem.model.AIUsageStatus;
+import com.interview.quizsystem.model.entity.AIModelUsage;
+import com.interview.quizsystem.model.entity.AIModelError;
+import com.interview.quizsystem.repository.AIModelUsageRepository;
+import com.interview.quizsystem.repository.AIModelErrorRepository;
 import com.interview.quizsystem.service.QuestionGeneratorService;
 import com.interview.quizsystem.service.GitHubParserService;
+import com.interview.quizsystem.service.TopicService;
+import com.interview.quizsystem.service.UserService;
 import kong.unirest.HttpResponse;
 import kong.unirest.Unirest;
 import kong.unirest.json.JSONObject;
@@ -16,7 +24,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.*;
 
 @Slf4j
@@ -26,6 +37,10 @@ public class QuestionGeneratorServiceImpl implements QuestionGeneratorService {
 
     private final GitHubParserService gitHubParserService;
     private final ObjectMapper objectMapper;
+    private final AIModelUsageRepository aiModelUsageRepository;
+    private final AIModelErrorRepository aiModelErrorRepository;
+    private final TopicService topicService;
+    private final UserService userService;
 
     @Value("${openai.model}")
     private String model;
@@ -37,16 +52,17 @@ public class QuestionGeneratorServiceImpl implements QuestionGeneratorService {
     private int maxTokens;
 
     private static final String OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
+    private static final BigDecimal COST_PER_TOKEN = new BigDecimal("0.000002"); // $0.002 per 1K tokens
 
     @Override
-    public List<Question> generateQuestions(String topic, int count, Difficulty difficulty) {
+    public List<QuestionDTO> generateQuestions(String topic, int count, Difficulty difficulty) {
         Map<String, String> topicContent = gitHubParserService.getContentByTopic(topic);
         if (topicContent.isEmpty()) {
             log.warn("No content found for topic: {}", topic);
             return Collections.emptyList();
         }
 
-        List<Question> questions = new ArrayList<>();
+        List<QuestionDTO> questions = new ArrayList<>();
         List<Map.Entry<String, String>> contentEntries = new ArrayList<>(topicContent.entrySet());
         int questionsPerContent = Math.max(2, (int) Math.ceil((double) count / contentEntries.size()));
         int maxAttempts = count * 2; // Allow some extra attempts for error cases
@@ -59,7 +75,7 @@ public class QuestionGeneratorServiceImpl implements QuestionGeneratorService {
             
             try {
                 // Try to generate a question from this content piece
-                Question question = generateQuestion(entry.getValue(), topic, difficulty);
+                QuestionDTO question = generateQuestion(entry.getValue(), topic, difficulty);
                 
                 // Check for duplicate questions
                 if (isDifferentFromExisting(question, questions)) {
@@ -85,9 +101,15 @@ public class QuestionGeneratorServiceImpl implements QuestionGeneratorService {
     }
 
     @Override
-    public Question generateQuestion(String content, String topic, Difficulty difficulty) {
+    @Transactional
+    public QuestionDTO generateQuestion(String content, String topic, Difficulty difficulty) {
+        log.info("Starting question generation for topic: {}, difficulty: {}", topic, difficulty);
+        long startTime = System.currentTimeMillis();
+        AIModelUsage usage = null;
+        
         try {
             String prompt = buildPrompt(content, difficulty);
+            log.debug("Sending prompt to OpenAI: {}", prompt);
             
             ObjectNode requestBody = objectMapper.createObjectNode();
             requestBody.put("model", model);
@@ -118,12 +140,62 @@ public class QuestionGeneratorServiceImpl implements QuestionGeneratorService {
                     .getJSONObject("message")
                     .getString("content");
 
-            // Clean the response content
-            responseContent = cleanJsonResponse(responseContent);
+            // Calculate tokens (approximate)
+            int promptTokens = prompt.length() / 4; // rough estimate
+            int responseTokens = responseContent.length() / 4;
+            int totalTokens = promptTokens + responseTokens;
+            
+            log.info("Calculated tokens - prompt: {}, response: {}, total: {}", promptTokens, responseTokens, totalTokens);
+            
+            // Create usage record
+            usage = AIModelUsage.builder()
+                    .topic(topicService.getTopicByName(topic))
+                    .user(userService.getCurrentUser())
+                    .operationType(AIOperationType.QUESTION_GENERATION)
+                    .modelProvider("OPENAI")
+                    .modelName(model)
+                    .tokensUsed(totalTokens)
+                    .costInUsd(COST_PER_TOKEN.multiply(new BigDecimal(totalTokens)).setScale(6, RoundingMode.HALF_UP))
+                    .responseTimeMs(System.currentTimeMillis() - startTime)
+                    .status(AIUsageStatus.SUCCESS)
+                    .build();
+            
+            usage = aiModelUsageRepository.save(usage);
+            log.info("Saved AI usage record with ID: {}", usage.getId());
 
+            // Clean and parse the response
+            responseContent = cleanJsonResponse(responseContent);
             return parseQuestionFromResponse(responseContent, topic, difficulty, content);
+            
         } catch (Exception e) {
-            log.error("Error generating question: {}", e.getMessage());
+            log.error("Error generating question: {}", e.getMessage(), e);
+            
+            // Create failed usage record if not already created
+            if (usage == null) {
+                usage = AIModelUsage.builder()
+                        .topic(topicService.getTopicByName(topic))
+                        .user(userService.getCurrentUser())
+                        .operationType(AIOperationType.QUESTION_GENERATION)
+                        .modelProvider("OPENAI")
+                        .modelName(model)
+                        .responseTimeMs(System.currentTimeMillis() - startTime)
+                        .status(AIUsageStatus.FAILED)
+                        .build();
+                
+                usage = aiModelUsageRepository.save(usage);
+                log.info("Saved failed AI usage record with ID: {}", usage.getId());
+            }
+            
+            // Log error
+            AIModelError error = AIModelError.builder()
+                    .usage(usage)
+                    .errorCode(e.getClass().getSimpleName())
+                    .errorMessage(e.getMessage())
+                    .build();
+            
+            aiModelErrorRepository.save(error);
+            log.info("Saved AI error record for usage ID: {}", usage.getId());
+            
             throw new RuntimeException("Failed to generate question", e);
         }
     }
@@ -139,7 +211,7 @@ public class QuestionGeneratorServiceImpl implements QuestionGeneratorService {
         return response;
     }
 
-    private boolean isDifferentFromExisting(Question newQuestion, List<Question> existingQuestions) {
+    private boolean isDifferentFromExisting(QuestionDTO newQuestion, List<QuestionDTO> existingQuestions) {
         return existingQuestions.stream()
             .noneMatch(existing -> 
                 existing.getContent().equals(newQuestion.getContent()) ||
@@ -178,10 +250,10 @@ public class QuestionGeneratorServiceImpl implements QuestionGeneratorService {
                 """, content, difficulty);
     }
 
-    private Question parseQuestionFromResponse(String response, String topic, Difficulty difficulty, String sourceContent) {
+    private QuestionDTO parseQuestionFromResponse(String response, String topic, Difficulty difficulty, String sourceContent) {
         try {
             JsonNode jsonNode = objectMapper.readTree(response);
-            return Question.builder()
+            return QuestionDTO.builder()
                     .id(UUID.randomUUID().toString())
                     .content(jsonNode.get("question").asText())
                     .type(QuestionType.valueOf(jsonNode.get("type").asText()))

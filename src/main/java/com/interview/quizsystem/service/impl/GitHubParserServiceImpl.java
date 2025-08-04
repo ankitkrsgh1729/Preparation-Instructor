@@ -1,12 +1,14 @@
 package com.interview.quizsystem.service.impl;
 
 import com.interview.quizsystem.service.GitHubParserService;
+import com.interview.quizsystem.service.TopicService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.File;
 import java.io.IOException;
@@ -25,6 +27,7 @@ import java.util.stream.Stream;
 public class GitHubParserServiceImpl implements GitHubParserService {
 
     private final Git gitClient;
+    private final TopicService topicService;
 
     @Value("${github.repository.local-path}")
     private String localPath;
@@ -48,6 +51,7 @@ public class GitHubParserServiceImpl implements GitHubParserService {
     }
 
     @Override
+    @Transactional
     public List<String> getAvailableTopics() {
         try {
             List<PathMatcher> includeMatchers = Arrays.stream(filePatterns.split(","))
@@ -60,7 +64,7 @@ public class GitHubParserServiceImpl implements GitHubParserService {
                     .map(pattern -> FileSystems.getDefault().getPathMatcher("glob:" + pattern.trim()))
                     .collect(Collectors.toList());
 
-            return Files.walk(Paths.get(localPath))
+            List<String> topics = Files.walk(Paths.get(localPath))
                     .filter(Files::isRegularFile)
                     .filter(path -> includeMatchers.stream().anyMatch(matcher -> matcher.matches(path)))
                     .filter(path -> excludeMatchers.stream().noneMatch(matcher -> matcher.matches(path)))
@@ -68,6 +72,11 @@ public class GitHubParserServiceImpl implements GitHubParserService {
                     .filter(Objects::nonNull)
                     .distinct()
                     .collect(Collectors.toList());
+
+            // Create topics in the database
+            topics.forEach(topicService::getOrCreateTopic);
+
+            return topics;
         } catch (IOException e) {
             log.error("Error getting available topics", e);
             throw new RuntimeException("Failed to get available topics", e);
@@ -75,8 +84,12 @@ public class GitHubParserServiceImpl implements GitHubParserService {
     }
 
     @Override
+    @Transactional
     public Map<String, String> getContentByTopic(String topic) {
         try {
+            // Ensure topic exists in database
+            topicService.getOrCreateTopic(topic);
+
             List<PathMatcher> includeMatchers = Arrays.stream(filePatterns.split(","))
                     .map(pattern -> FileSystems.getDefault().getPathMatcher("glob:" + pattern.trim()))
                     .collect(Collectors.toList());
