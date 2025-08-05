@@ -63,7 +63,7 @@ public class ProgressController {
         return ResponseEntity.ok(dtos);
     }
 
-    @GetMapping("/topics/{topicName}")
+    @GetMapping("/topics/{topicName:.+}")
     public ResponseEntity<TopicProgressDTO> getTopicProgress(@PathVariable String topicName) {
         User user = userService.getCurrentUser();
         Topic topic = topicService.getTopicByName(topicName);
@@ -76,7 +76,7 @@ public class ProgressController {
         return ResponseEntity.ok(convertToDTO(progress));
     }
 
-    @GetMapping("/topics/{topicName}/difficulty/{difficulty}")
+    @GetMapping("/topics/{topicName:.+}/difficulty/{difficulty}")
     public ResponseEntity<DifficultyProgressDTO> getDifficultyProgress(
             @PathVariable String topicName,
             @PathVariable Difficulty difficulty) {
@@ -93,8 +93,8 @@ public class ProgressController {
         return ResponseEntity.ok(convertToDTO(progress, topicProgress));
     }
 
-    @PostMapping("/topics/{topicName}/reset")
-    public ResponseEntity<TopicProgressDTO> resetTopicProgress(@PathVariable String topicName) {
+    @PostMapping("/topics/{topicName:.+}/reset")
+    public ResponseEntity<?> resetTopicProgress(@PathVariable String topicName) {
         User user = userService.getCurrentUser();
         Topic topic = topicService.getTopicByName(topicName);
         

@@ -126,21 +126,17 @@ public class GitHubParserServiceImpl implements GitHubParserService {
     }
 
     private String extractTopic(Path path) {
-        String fileName = path.getFileName().toString().toLowerCase();
+        // Get relative path from repository root
+        Path relativePath = Paths.get(localPath).relativize(path);
         
-        // Remove file extension
-        fileName = fileName.replaceAll("\\.md$", "");
+        // Convert path to string with forward slashes
+        String fullPath = relativePath.toString().replace('\\', '/');
         
-        // Handle different naming patterns
-        if (fileName.contains("-")) {
-            // For files like "algorithms-sorting.md"
-            return fileName.split("-")[0];
-        } else if (fileName.contains("_")) {
-            // For files like "algorithms_sorting.md"
-            return fileName.split("_")[0];
-        } else {
-            // For files without separators, return the whole name
-            return fileName;
+        // Remove .md extension if present
+        if (fullPath.endsWith(".md")) {
+            fullPath = fullPath.substring(0, fullPath.length() - 3);
         }
+        
+        return fullPath;
     }
 } 

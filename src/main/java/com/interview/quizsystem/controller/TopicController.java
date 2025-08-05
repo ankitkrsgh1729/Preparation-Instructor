@@ -9,6 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Arrays;
@@ -49,32 +50,37 @@ public class TopicController {
         }
     }
 
-    @GetMapping("/{topic}/availability")
+    @GetMapping("/availability")
     @Cacheable(value = "topic-availability", key = "#topic", 
                unless = "#result.statusCode != T(org.springframework.http.HttpStatus).OK")
-    public ResponseEntity<?> getTopicAvailability(@PathVariable String topic) {
+    public ResponseEntity<?> getTopicAvailability(@RequestParam String topic) {
+        log.info("Received topic availability request for topic: '{}'", topic);
         try {
             // Check if topic exists
             List<String> topics;
             try {
                 topics = gitHubParserService.getAvailableTopics();
+                log.info("Available topics: {}", topics);
             } catch (Exception e) {
                 log.warn("Failed to get topics from Git, using fallback topics", e);
                 topics = FALLBACK_TOPICS;
             }
 
             if (!topics.contains(topic) && !FALLBACK_TOPICS.contains(topic)) {
+                log.warn("Topic not found: '{}'", topic);
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse("Not found", "Topic does not exist"));
+                    .body(new ErrorResponse("Not found", "Topic does not exist: " + topic));
             }
 
             // Get content for the topic
             Map<String, String> content;
             try {
                 content = gitHubParserService.getContentByTopic(topic);
+                log.info("Content for topic '{}': {}", topic, content);
             } catch (Exception e) {
                 log.warn("Failed to get content for topic: {}, using default values", topic, e);
                 content = Map.of("default", "default content");
+                log.warn("Content for topic '{}' (fallback): {}", topic, content);
             }
 
             int estimatedQuestions = Math.max(content.size() * 2, 5); // At least 5 questions per topic
