@@ -5,6 +5,10 @@ import com.interview.quizsystem.repository.UserRepository;
 import com.interview.quizsystem.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,32 +17,28 @@ import java.time.LocalDateTime;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class UserServiceImpl implements UserService {
+public class UserServiceImpl implements UserService, UserDetailsService {
 
     private final UserRepository userRepository;
 
-    // TODO: Replace with actual authentication
-    private static final String DEFAULT_USER_EMAIL = "default@example.com";
-    private static final String DEFAULT_USERNAME = "default_user";
-
     @Override
-    @Transactional // Changed from readOnly to allow write
+    @Transactional(readOnly = true)
     public User getCurrentUser() {
-        return getOrCreateUser(DEFAULT_USERNAME, DEFAULT_USER_EMAIL);
+        var principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        if (principal instanceof UserDetails) {
+            String email = ((UserDetails) principal).getUsername();
+            return userRepository.findByEmail(email)
+                    .orElseThrow(() -> new IllegalStateException("User not found: " + email));
+        }
+        throw new IllegalStateException("No authenticated user found");
     }
 
     @Override
-    @Transactional // Ensure we can write to database
+    @Transactional
     public User getOrCreateUser(String username, String email) {
         return userRepository.findByEmail(email)
                 .orElseGet(() -> {
-                    User user = User.builder()
-                            .username(username)
-                            .email(email)
-                            .createdAt(LocalDateTime.now())
-                            .lastLogin(LocalDateTime.now())
-                            .build();
-                    return userRepository.save(user);
+                    throw new IllegalStateException("User must be registered through the authentication system");
                 });
     }
 
@@ -47,5 +47,12 @@ public class UserServiceImpl implements UserService {
     public User getUserById(Long id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + id));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found: " + email));
     }
 } 

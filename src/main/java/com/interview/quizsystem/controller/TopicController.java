@@ -12,7 +12,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -25,62 +24,43 @@ public class TopicController {
 
     private final GitHubParserService gitHubParserService;
 
-    // Fallback topics when Git sync fails
-    private static final List<String> FALLBACK_TOPICS = Arrays.asList(
-        "core fundamentals",
-        "data structures",
-        "algorithms",
-        "system design",
-        "design patterns"
-    );
-
     @GetMapping
     @Cacheable(value = "topics", unless = "#result.statusCode != T(org.springframework.http.HttpStatus).OK")
     public ResponseEntity<?> getTopics() {
         try {
             List<String> topics = gitHubParserService.getAvailableTopics();
             if (topics.isEmpty()) {
-                log.warn("No topics found from Git repository, using fallback topics");
-                return ResponseEntity.ok(FALLBACK_TOPICS);
+                log.warn("No topics found in the repository");
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "No topics found"));
             }
             return ResponseEntity.ok(topics.stream().sorted().collect(Collectors.toList()));
         } catch (Exception e) {
-            log.error("Failed to fetch topics from Git repository, using fallback topics", e);
-            return ResponseEntity.ok(FALLBACK_TOPICS);
+            log.error("Failed to fetch topics from repository", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "Failed to fetch topics"));
         }
     }
 
     @GetMapping("/availability")
-    @Cacheable(value = "topic-availability", key = "#topic", 
-               unless = "#result.statusCode != T(org.springframework.http.HttpStatus).OK")
+    @Cacheable(value = "topic-availability", unless = "#result.statusCode != T(org.springframework.http.HttpStatus).OK")
     public ResponseEntity<?> getTopicAvailability(@RequestParam String topic) {
         log.info("Received topic availability request for topic: '{}'", topic);
         try {
             // Check if topic exists
-            List<String> topics;
-            try {
-                topics = gitHubParserService.getAvailableTopics();
-                log.info("Available topics: {}", topics);
-            } catch (Exception e) {
-                log.warn("Failed to get topics from Git, using fallback topics", e);
-                topics = FALLBACK_TOPICS;
-            }
-
-            if (!topics.contains(topic) && !FALLBACK_TOPICS.contains(topic)) {
+            List<String> topics = gitHubParserService.getAvailableTopics();
+            if (!topics.contains(topic)) {
                 log.warn("Topic not found: '{}'", topic);
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse("Not found", "Topic does not exist: " + topic));
+                    .body(Map.of("error", "Topic does not exist: " + topic));
             }
 
             // Get content for the topic
-            Map<String, String> content;
-            try {
-                content = gitHubParserService.getContentByTopic(topic);
-                log.info("Content for topic '{}': {}", topic, content);
-            } catch (Exception e) {
-                log.warn("Failed to get content for topic: {}, using default values", topic, e);
-                content = Map.of("default", "default content");
-                log.warn("Content for topic '{}' (fallback): {}", topic, content);
+            Map<String, String> content = gitHubParserService.getContentByTopic(topic);
+            if (content.isEmpty()) {
+                log.warn("No content found for topic: '{}'", topic);
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("error", "No content found for topic: " + topic));
             }
 
             int estimatedQuestions = Math.max(content.size() * 2, 5); // At least 5 questions per topic
@@ -94,30 +74,8 @@ public class TopicController {
 
         } catch (Exception e) {
             log.error("Failed to get topic availability for topic: {}", topic, e);
-            return ResponseEntity.ok(Map.of(
-                "topic", topic,
-                "contentPieces", 1,
-                "estimatedQuestions", 5,
-                "recommendedMaxQuestions", 5
-            ));
-        }
-    }
-
-    private static class ErrorResponse {
-        private final String error;
-        private final String message;
-
-        public ErrorResponse(String error, String message) {
-            this.error = error;
-            this.message = message;
-        }
-
-        public String getError() {
-            return error;
-        }
-
-        public String getMessage() {
-            return message;
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "Failed to get topic availability"));
         }
     }
 } 

@@ -64,19 +64,26 @@ public class GitHubParserServiceImpl implements GitHubParserService {
                     .map(pattern -> FileSystems.getDefault().getPathMatcher("glob:" + pattern.trim()))
                     .collect(Collectors.toList());
 
-            List<String> topics = Files.walk(Paths.get(localPath))
+            // Get all markdown files and extract their topics
+            Set<String> topics = new HashSet<>();
+            Files.walk(Paths.get(localPath))
                     .filter(Files::isRegularFile)
                     .filter(path -> includeMatchers.stream().anyMatch(matcher -> matcher.matches(path)))
                     .filter(path -> excludeMatchers.stream().noneMatch(matcher -> matcher.matches(path)))
-                    .map(this::extractTopic)
-                    .filter(Objects::nonNull)
-                    .distinct()
-                    .collect(Collectors.toList());
+                    .forEach(path -> {
+                        String topic = extractTopic(path);
+                        if (topic != null) {
+                            topics.add(topic);
+                        }
+                    });
+
+            List<String> sortedTopics = new ArrayList<>(topics);
+            Collections.sort(sortedTopics);
 
             // Create topics in the database
-            topics.forEach(topicService::getOrCreateTopic);
+            sortedTopics.forEach(topicService::getOrCreateTopic);
 
-            return topics;
+            return sortedTopics;
         } catch (IOException e) {
             log.error("Error getting available topics", e);
             throw new RuntimeException("Failed to get available topics", e);
@@ -98,7 +105,10 @@ public class GitHubParserServiceImpl implements GitHubParserService {
             Files.walk(Paths.get(localPath))
                     .filter(Files::isRegularFile)
                     .filter(path -> includeMatchers.stream().anyMatch(matcher -> matcher.matches(path)))
-                    .filter(path -> extractTopic(path).equals(topic))
+                    .filter(path -> {
+                        String pathTopic = extractTopic(path);
+                        return pathTopic != null && pathTopic.equals(topic);
+                    })
                     .forEach(path -> {
                         try {
                             String content = Files.readString(path);
@@ -126,17 +136,27 @@ public class GitHubParserServiceImpl implements GitHubParserService {
     }
 
     private String extractTopic(Path path) {
-        // Get relative path from repository root
-        Path relativePath = Paths.get(localPath).relativize(path);
-        
-        // Convert path to string with forward slashes
-        String fullPath = relativePath.toString().replace('\\', '/');
-        
-        // Remove .md extension if present
-        if (fullPath.endsWith(".md")) {
-            fullPath = fullPath.substring(0, fullPath.length() - 3);
+        try {
+            // Get relative path from repository root
+            Path relativePath = Paths.get(localPath).relativize(path);
+            
+            // Convert path to string with forward slashes
+            String fullPath = relativePath.toString().replace('\\', '/');
+            
+            // Skip hidden files/directories
+            if (fullPath.startsWith(".") || fullPath.contains("/.")) {
+                return null;
+            }
+            
+            // Remove .md extension if present
+            if (fullPath.endsWith(".md")) {
+                fullPath = fullPath.substring(0, fullPath.length() - 3);
+            }
+            
+            return fullPath;
+        } catch (Exception e) {
+            log.error("Error extracting topic from path: {}", path, e);
+            return null;
         }
-        
-        return fullPath;
     }
 } 

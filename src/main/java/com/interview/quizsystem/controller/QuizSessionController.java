@@ -20,7 +20,6 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/sessions")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:3000")
 public class QuizSessionController {
 
     private final QuizSessionService quizSessionService;
@@ -36,7 +35,7 @@ public class QuizSessionController {
         if (!rateLimitBucket.tryConsume(1)) {
             log.warn("Rate limit exceeded for quiz session request");
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                    .body(new ErrorResponse("Rate limit exceeded", "Too many requests. Please try again later."));
+                    .body(Map.of("error", "Rate limit exceeded", "message", "Too many requests. Please try again later."));
         }
 
         try {
@@ -45,7 +44,7 @@ public class QuizSessionController {
             if (!availableTopics.contains(request.getTopic())) {
                 log.warn("Requested topic not found: {}", request.getTopic());
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(new ErrorResponse("Not found", "Topic does not exist"));
+                        .body(Map.of("error", "Not found", "message", "Topic does not exist"));
             }
 
             // Check if content is available for the topic
@@ -53,7 +52,7 @@ public class QuizSessionController {
             if (topicContent.isEmpty()) {
                 log.warn("No content available for topic: {}", request.getTopic());
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(new ErrorResponse("Not found", "No content available for the selected topic"));
+                        .body(Map.of("error", "Not found", "message", "No content available for the selected topic"));
             }
 
             // Start session
@@ -68,9 +67,11 @@ public class QuizSessionController {
                 log.warn("Not enough questions available for topic: {}, difficulty: {}, requested: {}, available: {}", 
                     request.getTopic(), request.getDifficulty(), request.getQuestionCount(), session.getQuestions().size());
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(new ErrorResponse("Not found", 
-                            String.format("Not enough questions available. Requested: %d, Available: %d", 
-                                request.getQuestionCount(), session.getQuestions().size())));
+                        .body(Map.of(
+                            "error", "Not found",
+                            "message", String.format("Not enough questions available. Requested: %d, Available: %d",
+                                request.getQuestionCount(), session.getQuestions().size())
+                        ));
             }
 
             // Remove correct answers from questions before sending to frontend
@@ -82,11 +83,11 @@ public class QuizSessionController {
         } catch (IllegalArgumentException e) {
             log.error("Invalid request parameters", e);
             return ResponseEntity.badRequest()
-                    .body(new ErrorResponse("Invalid request", e.getMessage()));
+                    .body(Map.of("error", "Invalid request", "message", e.getMessage()));
         } catch (Exception e) {
             log.error("Failed to start quiz session", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse("Server error", "Failed to start quiz session"));
+                    .body(Map.of("error", "Server error", "message", "Failed to start quiz session"));
         }
     }
 
@@ -95,37 +96,24 @@ public class QuizSessionController {
             @PathVariable String sessionId,
             @Valid @RequestBody SubmitAnswerRequest request) {
         
-        log.info("Received answer submission for session: {}, question: {}", 
-            sessionId, request.getQuestionId());
+        log.info("Received answer submission for session: {}, question: {}", sessionId, request.getQuestionId());
 
         try {
             QuizSession session = quizSessionService.submitAnswer(
-                sessionId, 
-                request.getQuestionId(), 
-                request.getAnswer()
+                    sessionId,
+                    request.getQuestionId(),
+                    request.getAnswer()
             );
 
-            if (session == null) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse("Not found", "Session not found or expired"));
-            }
-
-            // Ensure answer feedback is included for the submitted question
-            session.getQuestions().stream()
-                .filter(q -> q.getId().equals(request.getQuestionId()))
-                .findFirst()
-                .ifPresent(q -> q.setCorrectAnswer(q.getCorrectAnswer())); // This ensures the correct answer is included with feedback
-
             return ResponseEntity.ok(session);
-
-        } catch (IllegalStateException e) {
-            log.warn("Invalid session state: {}", e.getMessage());
+        } catch (IllegalArgumentException e) {
+            log.error("Invalid submission parameters", e);
             return ResponseEntity.badRequest()
-                .body(new ErrorResponse("Invalid request", e.getMessage()));
+                    .body(Map.of("error", "Invalid request", "message", e.getMessage()));
         } catch (Exception e) {
             log.error("Failed to submit answer", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse("Server error", "Failed to submit answer"));
+                    .body(Map.of("error", "Server error", "message", "Failed to submit answer"));
         }
     }
 
@@ -139,33 +127,15 @@ public class QuizSessionController {
         } catch (IllegalArgumentException e) {
             log.warn("Session not found: {}", sessionId);
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ErrorResponse("Not found", e.getMessage()));
+                    .body(Map.of("error", "Not found", "message", e.getMessage()));
         } catch (IllegalStateException e) {
             log.warn("Invalid session state: {}", e.getMessage());
             return ResponseEntity.badRequest()
-                .body(new ErrorResponse("Invalid request", e.getMessage()));
+                    .body(Map.of("error", "Invalid request", "message", e.getMessage()));
         } catch (Exception e) {
             log.error("Failed to end session", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse("Server error", "Failed to end session"));
-        }
-    }
-
-    private static class ErrorResponse {
-        private final String error;
-        private final String message;
-
-        public ErrorResponse(String error, String message) {
-            this.error = error;
-            this.message = message;
-        }
-
-        public String getError() {
-            return error;
-        }
-
-        public String getMessage() {
-            return message;
+                    .body(Map.of("error", "Server error", "message", "Failed to end session"));
         }
     }
 } 
