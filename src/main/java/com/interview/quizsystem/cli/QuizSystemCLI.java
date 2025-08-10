@@ -61,6 +61,7 @@ public class QuizSystemCLI implements CommandLineRunner {
     private void syncNotes() {
         System.out.println("\nSyncing notes from GitHub...");
         gitHubParserService.syncRepository();
+        // Optionally trigger pre-generation here in CLI future phase
         System.out.println("Notes synced successfully!");
     }
 

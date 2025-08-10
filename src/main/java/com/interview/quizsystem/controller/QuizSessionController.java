@@ -55,7 +55,7 @@ public class QuizSessionController {
                         .body(Map.of("error", "Not found", "message", "No content available for the selected topic"));
             }
 
-            // Start session
+            // Start session (now uses question bank internally)
             QuizSession session = quizSessionService.startSession(
                     request.getTopic(),
                     request.getDifficulty(),

@@ -23,4 +23,5 @@ public class QuestionDTO {
     private String sourceFile;
     private String sourceContent;
     private AnswerFeedback answerFeedback;
+    private Long questionBankId;
 } 

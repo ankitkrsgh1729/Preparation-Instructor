@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
 public class QuizSessionServiceImpl implements QuizSessionService {
 
     private final QuestionGeneratorService questionGeneratorService;
+    private final QuestionBankService questionBankService;
     private final AnswerEvaluationService answerEvaluationService;
     private final QuizSessionRepository quizSessionRepository;
     private final UserAnswerRepository userAnswerRepository;
@@ -41,6 +42,7 @@ public class QuizSessionServiceImpl implements QuizSessionService {
                 .explanation(dto.getExplanation())
                 .sourceFile(dto.getSourceFile())
                 .sourceContent(dto.getSourceContent())
+                .questionBank(dto.getQuestionBankId() == null ? null : com.interview.quizsystem.model.entity.QuestionBank.builder().id(dto.getQuestionBankId()).build())
                 .build();
     }
 
@@ -62,8 +64,9 @@ public class QuizSessionServiceImpl implements QuizSessionService {
     @Override
     @Transactional
     public QuizSession startSession(String topic, Difficulty difficulty, int questionCount) {
-        log.debug("Generating {} questions for topic: {}, difficulty: {}", questionCount, topic, difficulty);
-        List<QuestionDTO> questions = questionGeneratorService.generateQuestions(topic, questionCount, difficulty);
+        log.debug("Selecting {} questions for topic: {}, difficulty: {} from question bank", questionCount, topic, difficulty);
+        List<QuestionDTO> questions = questionBankService.getQuestionsByTopicAndDifficulty(
+                topicService.getTopicByName(topic), difficulty, questionCount);
         
         // Validate questions have correct answers
         questions.forEach(q -> {
@@ -88,7 +91,7 @@ public class QuizSessionServiceImpl implements QuizSessionService {
                 .topic(q.getTopic())
                 .difficulty(q.getDifficulty())
                 .sourceFile(q.getSourceFile())
-                .sourceContent(q.getSourceContent())
+                .sourceContent("")
                 .build())
             .collect(Collectors.toList());
 
@@ -141,6 +144,7 @@ public class QuizSessionServiceImpl implements QuizSessionService {
         List<QuestionDTO> visibleQuestions = questions.stream()
             .map(q -> q.toBuilder()
                 .correctAnswer(null) // Hide correct answer initially
+                .sourceContent("")
                 .build())
             .collect(Collectors.toList());
         session.setVisibleQuestions(visibleQuestions);
@@ -224,6 +228,7 @@ public class QuizSessionServiceImpl implements QuizSessionService {
                 .orElseThrow(() -> new IllegalStateException("Question not found"));
                 
             visibleQuestion.setCorrectAnswer(originalQuestion.getCorrectAnswer());
+            visibleQuestion.setSourceContent("");
             if (visibleQuestion.getType() == QuestionType.MULTIPLE_CHOICE) {
                 visibleQuestion.setOptions(new ArrayList<>(originalQuestion.getOptions()));
             }

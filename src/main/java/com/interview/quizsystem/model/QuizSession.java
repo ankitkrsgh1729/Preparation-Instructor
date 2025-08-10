@@ -1,6 +1,7 @@
 package com.interview.quizsystem.model;
 
 import com.fasterxml.jackson.annotation.JsonManagedReference;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.interview.quizsystem.model.entity.Question;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -47,6 +48,7 @@ public class QuizSession {
 
     @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
     @JoinColumn(name = "quiz_session_id")
+    @JsonIgnore
     private List<Question> storedQuestions = new ArrayList<>();
 
     @Transient

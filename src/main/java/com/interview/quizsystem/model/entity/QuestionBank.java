@@ -8,27 +8,28 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
 @Entity
-@Table(name = "questions")
+@Table(name = "question_bank")
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class Question {
+public class QuestionBank {
     @Id
-    private String id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "topic_id")
+    @JoinColumn(name = "topic_id", nullable = false)
     private Topic topic;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "question_bank_id")
-    @JsonIgnore
-    private QuestionBank questionBank;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "difficulty", nullable = false)
+    private Difficulty difficulty;
 
     @Column(name = "question_text", columnDefinition = "TEXT", nullable = false)
     private String questionText;
@@ -38,13 +39,9 @@ public class Question {
     private QuestionType questionType;
 
     @ElementCollection
-    @CollectionTable(name = "question_options", joinColumns = @JoinColumn(name = "question_id"))
+    @CollectionTable(name = "question_bank_options", joinColumns = @JoinColumn(name = "question_bank_id"))
     @Column(name = "option_value")
     private List<String> options;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
-    private Difficulty difficulty;
 
     @Column(name = "expected_answer", columnDefinition = "TEXT")
     private String expectedAnswer;
@@ -58,6 +55,9 @@ public class Question {
     @Column(name = "source_content", columnDefinition = "TEXT")
     @JsonIgnore
     private String sourceContent;
+
+    @Column(name = "content_hash", length = 128)
+    private String contentHash;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
@@ -75,4 +75,6 @@ public class Question {
     protected void onUpdate() {
         lastUpdated = LocalDateTime.now();
     }
-} 
+}
+
+
