@@ -3,6 +3,7 @@ package com.interview.quizsystem.controller;
 import com.interview.quizsystem.dto.auth.AuthResponse;
 import com.interview.quizsystem.dto.auth.LoginRequest;
 import com.interview.quizsystem.dto.auth.RegisterRequest;
+import com.interview.quizsystem.dto.auth.ResetPasswordRequest;
 import com.interview.quizsystem.service.AuthenticationService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -38,5 +39,15 @@ public class AuthController {
         String token = authHeader.substring(7);
         authenticationService.logout(token);
         return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/reset")
+    public ResponseEntity<?> resetPassword(@RequestBody @Valid ResetPasswordRequest request) {
+        try {
+            authenticationService.resetPassword(request);
+            return ResponseEntity.ok().body("Password reset successful");
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
     }
 } 

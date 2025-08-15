@@ -36,7 +36,7 @@ class QuestionBankServiceImplTest {
 
     @Test
     void regenerateCreatesTargetPerDifficulty() {
-        Topic topic = Topic.builder().id(1L).name("TopicA").build();
+        Topic topic = Topic.builder().name("TopicA").build();
         when(git.getContentByTopic("TopicA")).thenReturn(Map.of("a.md", "content"));
         when(hashService.calculateHash(anyString())).thenReturn("hash");
 
@@ -60,7 +60,7 @@ class QuestionBankServiceImplTest {
 
     @Test
     void getQuestionsReturnsLimitedAndValid() {
-        Topic topic = Topic.builder().id(1L).name("TopicA").build();
+        Topic topic = Topic.builder().name("TopicA").build();
         when(bankRepo.findByTopicAndDifficulty(topic, Difficulty.EASY)).thenReturn(
                 TestFixtures.bankList(
                         // valid MCQ
@@ -83,7 +83,6 @@ class QuestionBankServiceImplTest {
                 String text, QuestionType type, List<String> options, String answer, Difficulty diff
         ) {
             return com.interview.quizsystem.model.entity.QuestionBank.builder()
-                    .id(1L)
                     .questionText(text)
                     .questionType(type)
                     .options(options)

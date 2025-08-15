@@ -30,6 +30,10 @@ public class QuizSessionServiceImpl implements QuizSessionService {
     private final ProgressService progressService;
     private final TopicService topicService;
     private final UserService userService;
+    private final QuestionSelectionService questionSelectionService;
+    private final SpacedRepetitionService spacedRepetitionService;
+    private final UserQuestionPerformanceService userQuestionPerformanceService;
+    private final SessionMomentumService sessionMomentumService;
 
     private Question convertToEntity(QuestionDTO dto) {
         return Question.builder()
@@ -64,9 +68,13 @@ public class QuizSessionServiceImpl implements QuizSessionService {
     @Override
     @Transactional
     public QuizSession startSession(String topic, Difficulty difficulty, int questionCount) {
-        log.debug("Selecting {} questions for topic: {}, difficulty: {} from question bank", questionCount, topic, difficulty);
-        List<QuestionDTO> questions = questionBankService.getQuestionsByTopicAndDifficulty(
-                topicService.getTopicByName(topic), difficulty, questionCount);
+        log.debug("Starting session for topic: {}, difficulty: {}, questionCount: {}", topic, difficulty, questionCount);
+        
+        User user = userService.getCurrentUser();
+        Topic topicEntity = topicService.getTopicByName(topic);
+        
+        // Use intelligent question selection based on spaced repetition and difficulty progression
+        List<QuestionDTO> questions = questionSelectionService.selectQuestionsForSession(user, topicEntity, difficulty, questionCount);
         
         // Validate questions have correct answers
         questions.forEach(q -> {
@@ -74,7 +82,7 @@ public class QuizSessionServiceImpl implements QuizSessionService {
                 log.error("Question generated without correct answer. Content: {}", q.getContent());
                 throw new IllegalStateException("Question generated without correct answer: " + q.getContent());
             }
-            log.debug("Question generated - ID: {}, Type: {}, Has correct answer: {}", 
+            log.debug("Question selected - ID: {}, Type: {}, Has correct answer: {}", 
                 q.getId(), q.getType(), q.getCorrectAnswer() != null);
         });
 
@@ -119,6 +127,9 @@ public class QuizSessionServiceImpl implements QuizSessionService {
         session = quizSessionRepository.save(session);
         log.debug("Session created and stored: {}", session.getId());
         
+        // Initialize session momentum tracking
+        sessionMomentumService.initializeSession(sessionId, user);
+        
         // Return session with visible questions only
         return session.toBuilder()
                 .questions(questionsCopy)
@@ -134,6 +145,8 @@ public class QuizSessionServiceImpl implements QuizSessionService {
         if (session.getStatus() != SessionStatus.IN_PROGRESS) {
             throw new IllegalStateException("Session is not in progress");
         }
+        
+        long startTime = System.currentTimeMillis();
 
         // Convert stored questions to DTOs
         List<QuestionDTO> questions = session.getStoredQuestions().stream()
@@ -179,6 +192,9 @@ public class QuizSessionServiceImpl implements QuizSessionService {
         userAnswer = userAnswerRepository.save(userAnswer);
         session.getAnswers().add(userAnswer);
         
+        // Calculate response time
+        long responseTimeMs = System.currentTimeMillis() - startTime;
+        
         // Update session score
         session.setScore(calculateScore(session));
         session = quizSessionRepository.save(session);
@@ -187,6 +203,15 @@ public class QuizSessionServiceImpl implements QuizSessionService {
         User user = userService.getCurrentUser();
         Topic topic = topicService.getTopicByName(session.getTopic());
         progressService.updateProgress(user, topic, session.getDifficulty(), isCorrect);
+        
+        // Update spaced repetition data
+        spacedRepetitionService.processAnswer(user, questionId, isCorrect);
+        
+        // Update user question performance
+        userQuestionPerformanceService.recordAttempt(user, questionId, topic.getId(), session.getDifficulty(), isCorrect, responseTimeMs);
+        
+        // Update session momentum
+        sessionMomentumService.recordAnswer(sessionId, user, isCorrect, responseTimeMs);
 
         return session;
     }

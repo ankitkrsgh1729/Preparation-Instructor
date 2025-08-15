@@ -9,6 +9,7 @@ import java.util.List;
 public interface QuestionBankService {
     void regenerateForTopic(Topic topic, int perDifficultyTarget);
     List<QuestionDTO> getQuestionsByTopicAndDifficulty(Topic topic, Difficulty difficulty, int limit);
+    List<QuestionDTO> getQuestionsByIds(List<String> questionIds);
     long countByTopicAndDifficulty(Topic topic, Difficulty difficulty);
 }
 

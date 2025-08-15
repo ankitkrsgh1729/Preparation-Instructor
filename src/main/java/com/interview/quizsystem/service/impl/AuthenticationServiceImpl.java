@@ -3,6 +3,7 @@ package com.interview.quizsystem.service.impl;
 import com.interview.quizsystem.dto.auth.AuthResponse;
 import com.interview.quizsystem.dto.auth.LoginRequest;
 import com.interview.quizsystem.dto.auth.RegisterRequest;
+import com.interview.quizsystem.dto.auth.ResetPasswordRequest;
 import com.interview.quizsystem.model.Difficulty;
 import com.interview.quizsystem.model.Role;
 import com.interview.quizsystem.model.entity.DifficultyProgress;
@@ -23,7 +24,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.Arrays;
 import java.util.List;
 
 @Service
@@ -109,6 +109,15 @@ public class AuthenticationServiceImpl implements AuthenticationService {
     public void logout(String token) {
         // In a stateless JWT setup, we don't need to do anything here
         // If you want to implement token blacklisting, you would add the token to a blacklist here
+    }
+
+    @Override
+    @Transactional
+    public void resetPassword(ResetPasswordRequest request) {
+        var user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new IllegalArgumentException("User not found with email: " + request.getEmail()));
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
     }
 
     private void initializeUserProgress(User user) {
